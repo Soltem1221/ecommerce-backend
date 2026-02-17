@@ -1,0 +1,9 @@
+--- Admin Check Start ---
+✅ User found: {
+  "email": "sol@gmail.com",
+  "role": "admin",
+  "is_active": 1
+}
+❌ Password "1234" does NOT match.
+✅ Password "admin123" MATCHES the hash in database.
+--- Admin Check End ---
