@@ -6,7 +6,7 @@ async function initializeDatabase() {
   let connection;
   try {
     // Get database name from connection string or environment
-    const databaseUrl = process.env.DB_HOST;
+    const databaseUrl = process.env.DATABASE_URL;
 
     if (!databaseUrl) {
       throw new Error(
