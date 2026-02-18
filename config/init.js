@@ -1,11 +1,12 @@
 // database/init.js
 const mysql = require("mysql2/promise");
+require("dotenv").config();
 
 async function initializeDatabase() {
   let connection;
   try {
     // Get database name from connection string or environment
-    const databaseUrl = process.env.DATABASE_URL || process.env.DB_HOST;
+    const databaseUrl = process.env.DB_HOST;
 
     if (!databaseUrl) {
       throw new Error(
