@@ -74,3 +74,4 @@ app.listen(PORT, () => {
   console.log(`✓ Database: ${process.env.DB_NAME}`);
   console.log("========================================\n");
 });
+startServer();
