@@ -44,7 +44,7 @@ app.use((err, req, res, next) => {
     success: false,
     message:
       err.userMessage ||
-      "An unexpected error occurred while processing your request.",
+      "An unexpected error occurred while processing your request error.",
   };
   // include developer error details when available (safe in dev)
   if (process.env.NODE_ENV !== "production") {
