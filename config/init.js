@@ -22,15 +22,15 @@ async function initializeDatabase() {
       const port = parseInt(process.env.DB_PORT || "17216");
 
       const dbConfig = {
-        host: process.env.DB_HOST, // trolley.proxy.rlwy.net
-        port: port, // 17216
-        user: process.env.DB_USER, // root
-        password: process.env.DB_PASSWORD, // SQNmmjIsWSIQAKfPJynxXTzPkQYXKdmn
-        database: process.env.DB_NAME, // railway
+        host: process.env.DB_HOST,
+        port: port,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME,
         ssl: {
-          rejectUnauthorized: false, // Required for Render MySQL
+          rejectUnauthorized: false,
         },
-        connectTimeout: 60000, // 60 seconds timeout
+        connectTimeout: 60000,
         enableKeepAlive: true,
         keepAliveInitialDelay: 0,
       };
@@ -75,22 +75,60 @@ async function initializeDatabase() {
 
     // Get database name
     const dbName = process.env.DB_NAME || "railway";
-    console.log(`📋 Checking if tables exist in '${dbName}'...`);
+    console.log(`📋 Checking database schema in '${dbName}'...`);
 
-    // Check if users table exists
-    const [tables] = await connection.query(
-      "SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = ? AND table_name = 'users'",
+    // Get list of existing tables
+    const [existingTables] = await connection.query(
+      "SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = ?",
       [dbName],
     );
 
-    if (tables.length === 0) {
-      console.log("🔄 No tables found. Creating database schema...");
+    const existingTableNames = existingTables.map((t) => t.TABLE_NAME);
+    console.log("📊 Existing tables:", existingTableNames);
 
-      // Your complete schema SQL (keep your existing schema)
-      // database/init.js - Complete schema section
+    // Define all tables that should exist (from your schema)
+    const requiredTables = [
+      "users",
+      "seller_details",
+      "addresses",
+      "categories",
+      "brands",
+      "products",
+      "product_images",
+      "product_variants",
+      "product_attributes",
+      "tags",
+      "product_tags",
+      "cart",
+      "wishlist",
+      "orders",
+      "order_items",
+      "reviews",
+      "payments",
+      "seller_wallet",
+      "wallet_transactions",
+      "withdrawal_requests",
+      "banners",
+      "flash_sales",
+      "notifications",
+      "cms_pages",
+      "shipping_zones",
+      "shipping_rates",
+    ];
 
-      // Inside your initializeDatabase function, replace the schemaSQL section with:
+    // Find missing tables
+    const missingTables = requiredTables.filter(
+      (table) => !existingTableNames.includes(table),
+    );
 
+    if (missingTables.length > 0) {
+      console.log(
+        `🔄 Found ${missingTables.length} missing tables:`,
+        missingTables,
+      );
+      console.log("📝 Creating missing tables...");
+
+      // Your complete schema SQL
       const schemaSQL = `
   -- Users table (customers, sellers, admin)
   CREATE TABLE IF NOT EXISTS users (
@@ -435,7 +473,7 @@ async function initializeDatabase() {
     INDEX idx_user_read (user_id, is_read)
   );
 
-  -- CMS Pages (THIS WAS MISSING)
+  -- CMS Pages
   CREATE TABLE IF NOT EXISTS cms_pages (
     id INT PRIMARY KEY AUTO_INCREMENT,
     slug VARCHAR(100) UNIQUE NOT NULL,
@@ -467,37 +505,46 @@ async function initializeDatabase() {
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (zone_id) REFERENCES shipping_zones(id) ON DELETE CASCADE
   );
- `;
+`;
 
-      // Execute schema creation
-      console.log("📝 Creating tables...");
-
-      // Split schema into individual statements to handle errors better
+      // Split schema into individual statements
       const statements = schemaSQL.split(";").filter((stmt) => stmt.trim());
 
+      let createdCount = 0;
       for (let i = 0; i < statements.length; i++) {
         const stmt = statements[i].trim();
         if (stmt) {
           try {
             await connection.query(stmt);
-            console.log(`  ✅ Created table ${i + 1}/${statements.length}`);
+            // Extract table name for logging
+            const tableNameMatch = stmt.match(
+              /CREATE TABLE IF NOT EXISTS (\w+)/i,
+            );
+            if (tableNameMatch) {
+              const tableName = tableNameMatch[1];
+              if (missingTables.includes(tableName)) {
+                console.log(`  ✅ Created missing table: ${tableName}`);
+                createdCount++;
+              }
+            }
           } catch (stmtError) {
-            // If table already exists, continue
+            // If table already exists, it's fine - just continue
             if (!stmtError.message.includes("already exists")) {
               console.error(
-                `  ❌ Error with statement:`,
+                `  ❌ Error creating table:`,
                 stmt.substring(0, 50) + "...",
+                stmtError.message,
               );
-              throw stmtError;
+              // Don't throw - continue with other tables
             }
           }
         }
       }
 
-      console.log("✅ All tables created successfully");
+      console.log(`✅ Created ${createdCount} missing tables successfully`);
 
-      // Insert default data
-      console.log("📦 Inserting default data...");
+      // Insert default data for new tables
+      console.log("📦 Inserting default data for new tables...");
 
       // Check if admin exists
       const [adminExists] = await connection.query(
@@ -512,41 +559,43 @@ async function initializeDatabase() {
         console.log("✅ Admin user created");
       }
 
-      // Check if categories exist
-      const [categoriesExist] = await connection.query(
-        "SELECT id FROM categories LIMIT 1",
-      );
-
-      if (categoriesExist.length === 0) {
-        await connection.query(`
-          INSERT INTO categories (name, slug, description, is_active) VALUES 
-          ('Electronics', 'electronics', 'Electronic devices and accessories', TRUE),
-          ('Fashion', 'fashion', 'Clothing and fashion items', TRUE),
-          ('Home & Kitchen', 'home-kitchen', 'Home appliances and kitchen items', TRUE),
-          ('Books', 'books', 'Books and educational materials', TRUE),
-          ('Sports', 'sports', 'Sports equipment and accessories', TRUE),
-          ('Beauty', 'beauty', 'Beauty and personal care products', TRUE)
-        `);
-        console.log("✅ Default categories created");
+      // Check if categories exist and table was just created
+      if (missingTables.includes("categories")) {
+        const [categoriesExist] = await connection.query(
+          "SELECT COUNT(*) as count FROM categories",
+        );
+        if (categoriesExist[0].count === 0) {
+          await connection.query(`
+            INSERT INTO categories (name, slug, description, is_active) VALUES 
+            ('Electronics', 'electronics', 'Electronic devices and accessories', TRUE),
+            ('Fashion', 'fashion', 'Clothing and fashion items', TRUE),
+            ('Home & Kitchen', 'home-kitchen', 'Home appliances and kitchen items', TRUE),
+            ('Books', 'books', 'Books and educational materials', TRUE),
+            ('Sports', 'sports', 'Sports equipment and accessories', TRUE),
+            ('Beauty', 'beauty', 'Beauty and personal care products', TRUE)
+          `);
+          console.log("✅ Default categories created");
+        }
       }
 
-      // Check if CMS pages exist
-      const [cmsExist] = await connection.query(
-        "SELECT id FROM cms_pages LIMIT 1",
-      );
-
-      if (cmsExist.length === 0) {
-        await connection.query(`
-          INSERT INTO cms_pages (slug, title, content, is_active) VALUES 
-          ('about-us', 'About Us', '<h1>About Our Marketplace</h1><p>Welcome to our e-commerce platform.</p>', TRUE),
-          ('privacy-policy', 'Privacy Policy', '<h1>Privacy Policy</h1><p>Your privacy is important to us.</p>', TRUE),
-          ('terms-conditions', 'Terms & Conditions', '<h1>Terms & Conditions</h1><p>Please read these terms carefully.</p>', TRUE),
-          ('contact', 'Contact Us', '<h1>Contact Us</h1><p>Get in touch with us.</p>', TRUE)
-        `);
-        console.log("✅ Default CMS pages created");
+      // Check if CMS pages exist and table was just created
+      if (missingTables.includes("cms_pages")) {
+        const [cmsExist] = await connection.query(
+          "SELECT COUNT(*) as count FROM cms_pages",
+        );
+        if (cmsExist[0].count === 0) {
+          await connection.query(`
+            INSERT INTO cms_pages (slug, title, content, is_active) VALUES 
+            ('about-us', 'About Us', '<h1>About Our Marketplace</h1><p>Welcome to our e-commerce platform.</p>', TRUE),
+            ('privacy-policy', 'Privacy Policy', '<h1>Privacy Policy</h1><p>Your privacy is important to us.</p>', TRUE),
+            ('terms-conditions', 'Terms & Conditions', '<h1>Terms & Conditions</h1><p>Please read these terms carefully.</p>', TRUE),
+            ('contact', 'Contact Us', '<h1>Contact Us</h1><p>Get in touch with us.</p>', TRUE)
+          `);
+          console.log("✅ Default CMS pages created");
+        }
       }
     } else {
-      console.log("✅ Tables already exist, skipping initialization");
+      console.log("✅ All required tables already exist");
     }
 
     console.log("🚀 Database initialization complete");
